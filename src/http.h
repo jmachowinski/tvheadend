@@ -361,6 +361,9 @@ void http_client_ssl_peer_verify( http_client_t *hc, int verify );
 
 int rtsp_send( http_client_t *hc, http_cmd_t cmd, const char *path,
                const char *query, http_arg_list_t *hdr );
+
+void
+rtsp_copy_session( http_client_t *src, http_client_t *dst );
                       
 void rtsp_clear_session( http_client_t *hc );
 

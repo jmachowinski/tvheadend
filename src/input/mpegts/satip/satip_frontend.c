@@ -968,9 +968,152 @@ satip_frontend_close_rtsp
   *rtsp = NULL;
 }
 
+// int handle_rtsp_requests(http_client_t *rtsp, long stream_id, satip_frontend_t *lfe, satip_tune_req_t *tr)
+// {
+//     uint8_t session[32];
+//     int r = http_client_run(rtsp);
+//     if (r < 0) {
+//         //http connection was terminated
+//         if (rtsp->hc_code == 404 && session[0]) {
+//             tvhlog(LOG_WARNING, "satip", "%s - RTSP 404 ERROR (retrying)", buf);
+//             satip_frontend_extra_shutdown(lfe, session, stream_id);
+//             session[0] = '\0';
+//             start = 1;
+//             http_client_close(rtsp);
+//             rtsp = NULL;
+//             break;
+//         }
+//         tvhlog(LOG_ERR, "satip", "%s - RTSP error %d (%s) [%i-%i]",
+//                 buf, r, strerror(-r), rtsp->hc_cmd, rtsp->hc_code);
+//         satip_frontend_tuning_error(lfe, tr);
+//         fatal = 1;
+//     } 
+//     
+//     else if (r == HTTP_CON_DONE) {            
+//         tvhwarn("satip", "HTTP_CON_DONE");
+//         printf("HTTP_CON_DONE");
+//             
+//         if (start)
+//             goto done;
+//         reply = 0;
+//         switch (rtsp->hc_cmd) {
+//         case RTSP_CMD_OPTIONS:
+//             r = rtsp_options_decode(rtsp);
+//             if (!running)
+//             break;
+//             if (r < 0) {
+//             tvhlog(LOG_ERR, "satip", "%s - RTSP OPTIONS error %d (%s) [%i-%i]",
+//                     buf, r, strerror(-r), rtsp->hc_cmd, rtsp->hc_code);
+//             satip_frontend_tuning_error(lfe, tr);
+//             fatal = 1;
+//             }
+//             break;
+//         case RTSP_CMD_SETUP:
+//             r = rtsp_setup_decode(rtsp, 1);
+//             tvhwarn("satip", "RTSP_CMD_SETUP");
+//             printf("RTSP_CMD_SETUP");
+// 
+//             if (!running)
+//             break;
+//             if (r < 0 || rtsp->hc_rtp_port != rtp_port ||
+//                         rtsp->hc_rtpc_port != rtp_port + 1) {
+//                 tvhlog(LOG_ERR, "satip", "%s - RTSP SETUP error %d (%s) [%i-%i]",
+//                         buf, r, strerror(-r), rtsp->hc_cmd, rtsp->hc_code);
+//                 satip_frontend_tuning_error(lfe, tr);
+//             fatal = 1;
+//             } else {
+//             strncpy((char *)session, rtsp->hc_rtsp_session ?: "", sizeof(session));
+//             session[sizeof(session)-1] = '\0';
+//             stream_id = rtsp->hc_rtsp_stream_id;
+//             tvhdebug("satip", "%s #%i - new session %s stream id %li",
+//                         rtsp->hc_host, lfe->sf_number,
+//                         rtsp->hc_rtsp_session, rtsp->hc_rtsp_stream_id);
+//             if (lfe->sf_play2) {
+//                 tvhwarn("satip", "play2 is Active WTF ?");
+//                 printf("play2 is Active WTF ?");
+//                 r = -12345678;
+//                 pthread_mutex_lock(&lfe->sf_dvr_lock);
+//                 if (lfe->sf_req == lfe->sf_req_thread)
+//                 r = satip_rtsp_setup(rtsp, position, lfe->sf_number,
+//                                         rtp_port, &lm->lm_tuning,
+//                                         rtsp_flags | SATIP_SETUP_PLAY);
+//                 pthread_mutex_unlock(&lfe->sf_dvr_lock);
+//                 if (r < 0) {
+//                     tvherror("satip", "%s - failed to tune2 (%i)", buf, r);
+//                     satip_frontend_tuning_error(lfe, tr);
+//                     fatal = 1;
+//                 }
+//                 reply = 1;
+//                 continue;
+//             } else {
+//                 if (satip_frontend_pid_changed(rtsp, lfe, buf) > 0) {
+//                 reply = 1;
+//                 continue;
+//                 }
+//             }
+//             }
+//             break;
+//         case RTSP_CMD_PLAY:
+//             if (!running)
+//             break;
+//             if (rtsp->hc_code == 200 && play2) {
+//             play2 = 0;
+//             if (satip_frontend_pid_changed(rtsp, lfe, buf) > 0) {
+//                 reply = 1;
+//                 continue;
+//             }
+//             }
+//             /* fall thru */
+//         default:
+//             if (rtsp->hc_code >= 400) {
+//             tvhlog(LOG_ERR, "satip", "%s - RTSP cmd error %d (%s) [%i-%i]",
+//                     buf, r, strerror(-r), rtsp->hc_cmd, rtsp->hc_code);
+//             satip_frontend_tuning_error(lfe, tr);
+//             fatal = 1;
+//             }
+//             break;
+//         }
+//         rtsp->hc_cmd = HTTP_CMD_NONE;
+//     }
+// 
+//     if (!running)
+//     continue;
+// 
+// }
+http_client_t * create_new_rtsp_con(http_client_t *rtsp_session, satip_frontend_t *lfe);
+
+http_client_t * create_new_rtsp_con(http_client_t *rtsp_session, satip_frontend_t *lfe)
+{
+    tvhwarn("satip", "Creating new HTTP Connection");
+    http_client_t *rtsp = http_client_connect(lfe, RTSP_VERSION_1_0, "rstp",
+                            lfe->sf_device->sd_info.addr,
+                            lfe->sf_device->sd_info.rtsp_port,
+                            satip_frontend_bindaddr(lfe));
+    
+    if(!rtsp)
+    {
+        tvhwarn("satip", "HTTP Connection Failed");
+        return rtsp;
+    }
+
+    tvhwarn("satip", "Creating new HTTP Connection DONE");
+
+    tvhpoll_event_t ev;    
+    memset(&ev, 0, sizeof(ev));
+    ev.events           = TVHPOLL_IN;
+    ev.fd               = rtsp->hc_fd;
+    ev.data.ptr         = rtsp;
+    tvhpoll_add(rtsp_session->hc_efd, &ev, 1);
+    rtsp_copy_session(rtsp_session, rtsp);
+    return rtsp;
+}
+
 static void *
 satip_frontend_input_thread ( void *aux )
 {
+    
+    tvhwarn("satip", "new_thread");
+
 #define RTP_PKTS      64
 #define UDP_PKT_SIZE  1472         /* this is maximum UDP payload (standard ethernet) */
 #define RTP_PKT_SIZE  (UDP_PKT_SIZE - 12)             /* minus RTP minimal RTP header */
@@ -979,6 +1122,7 @@ satip_frontend_input_thread ( void *aux )
   satip_tune_req_t *tr = NULL;
   mpegts_mux_instance_t *mmi;
   http_client_t *rtsp;
+  http_client_t *rtsp_session = NULL;;
   udp_connection_t *rtp = NULL, *rtcp = NULL;
   dvb_mux_t *lm;
   char buf[256];
@@ -1015,6 +1159,7 @@ satip_frontend_input_thread ( void *aux )
    * New tune
    */
 new_tune:
+  tvhwarn("satip", "new_tune");
   sbuf_free(&sb);
   udp_multirecv_free(&um);
   udp_close(rtcp);
@@ -1030,8 +1175,11 @@ new_tune:
 
   lfe->mi_display_name((mpegts_input_t*)lfe, buf, sizeof(buf));
 
+  //close last connection if we did a restart
   while (!start) {
 
+    tvhwarn("satip", "!Start case");
+      
     nfds = tvhpoll_wait(efd, ev, 1, rtsp ? 50 : -1);
 
     if (!tvheadend_running) { exit_flag = 1; goto done; }
@@ -1046,7 +1194,7 @@ new_tune:
           exit_flag = 1;
           goto done;
         } else if (b[0] == 's') {
-          tvhtrace("satip", "%s - start", buf);
+          tvhwarn("satip", "%s - start", buf);
           start = 1;
         }
       }
@@ -1066,7 +1214,8 @@ new_tune:
           rtsp_setup_decode(rtsp, 1);
           break;
         default:
-          break;
+          tvhwarn("satip", "rtsp intact ?");
+        break;
         }
       }
     }
@@ -1103,7 +1252,7 @@ new_tune:
 
   rtp_port = ntohs(IP_PORT(rtp->ip));
 
-  tvhtrace("satip", "%s - local RTP port %i RTCP port %i",
+  tvhwarn("satip", "%s - local RTP port %i RTCP port %i",
                     lfe->mi_name,
                     ntohs(IP_PORT(rtp->ip)),
                     ntohs(IP_PORT(rtcp->ip)));
@@ -1188,6 +1337,7 @@ new_tune:
 
   i = 0;
   if (!rtsp) {
+    tvhwarn("satip", "new_rtsp con");
     rtsp = http_client_connect(lfe, RTSP_VERSION_1_0, "rstp",
                                lfe->sf_device->sd_info.addr,
                                lfe->sf_device->sd_info.rtsp_port,
@@ -1242,7 +1392,9 @@ new_tune:
 
   udp_multirecv_init(&um, RTP_PKTS, RTP_PKT_SIZE);
   sbuf_init_fixed(&sb, RTP_PKTS * RTP_PKT_SIZE);
-  
+
+  tvhwarn("satip", "before loop");
+
   while ((reply || running) && !fatal) {
 
     nfds = tvhpoll_wait(efd, ev, 1, ms);
@@ -1260,7 +1412,7 @@ new_tune:
           changing = 1;
           continue;
         } else if (b[0] == 'e') {
-          tvhtrace("satip", "%s - input thread received shutdown", buf);
+          tvhwarn("satip", "%s - input thread received shutdown", buf);
           exit_flag = 1; running = 0;
           continue;
         } else if (b[0] == 's') {
@@ -1268,21 +1420,35 @@ new_tune:
           continue;
         }
       }
-      tvhtrace("satip", "%s - input thread received mux close", buf);
+      tvhwarn("satip", "%s - input thread received mux close", buf);
       running = 0;
       continue;
     }
 
-    if (changing && rtsp->hc_cmd == HTTP_CMD_NONE) {
+    if (changing && !rtsp) {
       ms = 500;
       changing = 0;
+      tvhwarn("satip", "Changing Channel");
+
+      rtsp = create_new_rtsp_con(rtsp_session, lfe);
+      if (rtsp == NULL) {
+        satip_frontend_tuning_error(lfe, tr);
+        fatal = 1;
+        continue;
+      }
+
       if (satip_frontend_pid_changed(rtsp, lfe, buf) > 0)
+      {
+        tvhwarn("satip", "Changing Channel - Request sent");
+
         reply = 1;
+      }
       continue;
     }
 
     if (nfds < 1) continue;
 
+    //rtsp request and handle code
     if (ev[0].data.ptr == rtsp) {
       r = http_client_run(rtsp);
       if (r < 0) {
@@ -1300,6 +1466,11 @@ new_tune:
         satip_frontend_tuning_error(lfe, tr);
         fatal = 1;
       } else if (r == HTTP_CON_DONE) {
+          
+        tvhwarn("satip", "HTTP_CON_DONE");
+        printf("HTTP_CON_DONE");
+
+          
         if (start)
           goto done;
         reply = 0;
@@ -1317,6 +1488,8 @@ new_tune:
           break;
         case RTSP_CMD_SETUP:
           r = rtsp_setup_decode(rtsp, 1);
+        tvhwarn("satip", "RTSP_CMD_SETUP");
+
           if (!running)
             break;
           if (r < 0 || rtsp->hc_rtp_port != rtp_port ||
@@ -1329,10 +1502,23 @@ new_tune:
             strncpy((char *)session, rtsp->hc_rtsp_session ?: "", sizeof(session));
             session[sizeof(session)-1] = '\0';
             stream_id = rtsp->hc_rtsp_stream_id;
+
+            if(rtsp_session)
+            {
+                tvhwarn("satip", "Warning, there is already an active rtsp session, this should not happen !");
+                free(rtsp_session);
+            }
+            rtsp_session = malloc(sizeof(http_client_t));
+            
+            //save rtsp session data
+            rtsp_copy_session(rtsp, rtsp_session);
+
             tvhdebug("satip", "%s #%i - new session %s stream id %li",
                         rtsp->hc_host, lfe->sf_number,
                         rtsp->hc_rtsp_session, rtsp->hc_rtsp_stream_id);
             if (lfe->sf_play2) {
+                tvhwarn("satip", "play2 is Active WTF ?");
+                printf("play2 is Active WTF ?");
               r = -12345678;
               pthread_mutex_lock(&lfe->sf_dvr_lock);
               if (lfe->sf_req == lfe->sf_req_thread)
@@ -1348,10 +1534,7 @@ new_tune:
               reply = 1;
               continue;
             } else {
-              if (satip_frontend_pid_changed(rtsp, lfe, buf) > 0) {
-                reply = 1;
-                continue;
-              }
+              changing = 1;
             }
           }
           break;
@@ -1375,7 +1558,14 @@ new_tune:
           }
           break;
         }
-        rtsp->hc_cmd = HTTP_CMD_NONE;
+        
+        if(rtsp_session)
+            rtsp_session->hc_ping_time = rtsp->hc_ping_time;
+        tvhwarn("satip", "Closing HTTP Stream");
+        http_client_close(rtsp);
+        ev->fd = rtsp->hc_fd;
+        tvhpoll_rem(efd, ev, 1);
+        rtsp = NULL;
       }
 
       if (!running)
@@ -1383,12 +1573,19 @@ new_tune:
     }
 
     /* We need to keep the session alive */
-    if (rtsp->hc_ping_time + rtsp->hc_rtp_timeout / 2 < dispatch_clock &&
-        rtsp->hc_cmd == HTTP_CMD_NONE) {
+    if (rtsp_session && rtsp_session->hc_ping_time + rtsp_session->hc_rtp_timeout / 2 < dispatch_clock && !rtsp) {
+        rtsp = create_new_rtsp_con(rtsp_session, lfe);
+        if (rtsp == NULL) {
+            satip_frontend_tuning_error(lfe, tr);
+            fatal = 1;
+        }
+        
       rtsp_options(rtsp);
       reply = 1;
     }
 
+    
+    //the code below seems only to be releavant for receiving of the mpeg stream
     if (ev[0].data.ptr == rtcp) {
       c = recv(rtcp->fd, b, sizeof(b), MSG_DONTWAIT);
       if (c > 0) {
@@ -1403,6 +1600,8 @@ new_tune:
     if (ev[0].data.ptr != rtp)
       continue;     
 
+//     tvhwarn("satip", "Got RTP DATA");
+    
     tc = udp_multirecv_read(&um, rtp->fd, RTP_PKTS, &iovec);
 
     if (tc < 0) {
@@ -1442,7 +1641,7 @@ new_tune:
         seq = nseq;
       else if (((seq + 1) & 0xffff) != nseq) {
         unc += ((c - pos) / 188) * (uint32_t)((uint16_t)nseq-(uint16_t)(seq+1));
-        tvhtrace("satip", "RTP discontinuity (%i != %i)", seq + 1, nseq);
+        tvhwarn("satip", "RTP discontinuity (%i != %i)", seq + 1, nseq);
       }
       seq = nseq;
       /* Process */
@@ -1476,10 +1675,21 @@ new_tune:
   ev[2].data.ptr           = NULL;
   tvhpoll_rem(efd, ev, 3);
 
-  if (exit_flag) {
-    satip_frontend_shutdown(rtsp, efd);
-    http_client_close(rtsp);
-    rtsp = NULL;
+  //tear down rtsp connection
+  if(rtsp_session)
+  {
+      //close old http session, may be corrupt
+      if(rtsp)
+        http_client_close(rtsp);
+          
+    rtsp = create_new_rtsp_con(rtsp_session, lfe);
+    if (rtsp != NULL) {
+        satip_frontend_shutdown(rtsp, efd);
+        http_client_close(rtsp);
+        rtsp = NULL;
+    }  
+    free(rtsp_session);
+    rtsp_session = NULL;
   }
 
 done:
@@ -1504,9 +1714,6 @@ done:
 
   if (!exit_flag)
     goto new_tune;
-
-  if (rtsp)
-    http_client_close(rtsp);
 
   tvhpoll_destroy(efd);
   return NULL;
@@ -1534,6 +1741,7 @@ satip_frontend_hacks( satip_frontend_t *lfe, int *def_positions )
               strstr(sd->sd_info.modelname, "FRITZ!")) {
     lfe->sf_play2 = 1;
   }
+    lfe->sf_play2 = 0;
 }
 
 satip_frontend_t *

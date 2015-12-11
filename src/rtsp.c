@@ -56,6 +56,33 @@ rtsp_send( http_client_t *hc, http_cmd_t cmd,
 }
 
 void
+rtsp_copy_session( http_client_t *src, http_client_t *dst )
+{
+  dst->hc_rtp_port       = src->hc_rtp_port;
+  dst->hc_rtpc_port      = src->hc_rtpc_port;
+  dst->hc_rtsp_session   = strdup(src->hc_rtsp_session);
+  if(src->hc_rtp_dest)
+    dst->hc_rtp_dest       = strdup(src->hc_rtp_dest);
+  else
+    dst->hc_rtp_dest = NULL;  
+  dst->hc_rtp_multicast  = src->hc_rtp_multicast;
+  dst->hc_rtsp_stream_id = src->hc_rtsp_stream_id;
+  dst->hc_rtp_timeout    = src->hc_rtp_timeout;
+  dst->hc_efd            = src->hc_efd;
+    if(src->hc_rtsp_user)
+    {
+        dst->hc_rtsp_user = strdup(src->hc_rtsp_user);
+        dst->hc_rtsp_pass = strdup(src->hc_rtsp_pass);
+    }
+    else
+    {
+        dst->hc_rtsp_user = NULL;
+        dst->hc_rtsp_pass = NULL;
+    }
+}
+
+
+void
 rtsp_clear_session( http_client_t *hc )
 {
   free(hc->hc_rtsp_session);
